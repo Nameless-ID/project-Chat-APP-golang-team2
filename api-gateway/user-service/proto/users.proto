@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package users;
+
+option go_package = "./proto";
+
+service UserService {
+    rpc GetAllUsers (GetAllUsersRequest) returns (UsersList);
+    rpc UpdateUser (UpdateUserRequest) returns (UpdateUserResponse);
+}
+
+message UpdateUserRequest {
+    int32 id = 1;
+    string first_name = 3;
+    string last_name = 4;
+}
+
+message UpdateUserResponse {
+    string message = 1;
+}
+
+message GetAllUsersRequest {
+    string name = 1;
+}
+
+message User {
+    int32 id = 1;
+    string email = 2;
+    string first_name = 3;
+    string last_name = 4;
+    bool is_online = 5;
+}
+
+message UsersList {
+    repeated User users = 1;
+}
+
+message Empty {}
