@@ -40,11 +40,11 @@ func main() {
 	grpcServer := grpc.NewServer()
 	pb.RegisterChatServiceServer(grpcServer, chatservice)
 
-	listener, err := net.Listen("tcp", ":50051")
+	listener, err := net.Listen("tcp", ":50054")
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("gRPC server started on port 50051")
+	log.Println("gRPC server started on port 50054")
 	if err := grpcServer.Serve(listener); err != nil {
 		log.Fatal(err)
 	}

@@ -24,7 +24,7 @@ var (
 
 func main() {
 	// Inisialisasi koneksi gRPC ke Auth Service
-	conn, err := grpc.Dial("103.127.132.149:50052", grpc.WithInsecure())
+	conn, err := grpc.Dial("localhost:50052", grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("Failed to connect to Auth Service: %v", err)
 	}
@@ -32,7 +32,7 @@ func main() {
 	authClient = authpb.NewAuthServiceClient(conn)
 
 	// Inisialisasi koneksi gRPC ke User Service
-	userConn, err := grpc.Dial("103.127.132.149:50053", grpc.WithInsecure())
+	userConn, err := grpc.Dial("localhost:50053", grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("Failed to connect to User Service: %v", err)
 	}
@@ -40,7 +40,7 @@ func main() {
 	userClient = userpb.NewUserServiceClient(userConn)
 
 	// Inisialisasi koneksi gRPC ke Chat Service
-	chatConn, err := grpc.Dial("103.127.132.149:50054", grpc.WithInsecure())
+	chatConn, err := grpc.Dial("localhost:50054", grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("Failed to connect to Chat Service: %v", err)
 	}
@@ -80,20 +80,13 @@ func loginHandler(c *gin.Context) {
 
 	res, err := authClient.Login(context.Background(), &req)
 	if err != nil {
+		log.Print(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to login"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": res.Message,
-		"user": gin.H{
-			"id":          res.User.Id,
-			"email":       res.User.Email,
-			"is_verified": res.User.IsVerified,
-			"created_at":  res.User.CreatedAt.AsTime(),
-			"updated_at":  res.User.UpdatedAt.AsTime(),
-		},
-		"token": res.Token,
 	})
 }
 
@@ -113,14 +106,7 @@ func verifyOTPHandler(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": res.Message,
-		"user": gin.H{
-			"id":          res.User.Id,
-			"email":       res.User.Email,
-			"is_verified": res.User.IsVerified,
-			"created_at":  res.User.CreatedAt.AsTime(),
-			"updated_at":  res.User.UpdatedAt.AsTime(),
-		},
-		"token": res.Token,
+		"token":   res.Token,
 	})
 }
 
@@ -202,6 +188,7 @@ func sendMessageHandler(c *gin.Context) {
 
 	res, err := chatClient.SendMessage(context.Background(), &req)
 	if err != nil {
+		log.Print(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send message"})
 		return
 	}

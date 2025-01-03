@@ -22,7 +22,7 @@ func main() {
 	// }
 
 	var listener net.Listener
-	listener, err = net.Listen("tcp", ":50051")
+	listener, err = net.Listen("tcp", ":50052")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func main() {
 	if err := s.Serve(listener); err != nil {
 		log.Fatal(err)
 	}
-	log.Println("Server running on port 50051")
+	log.Println("Server running on port 50052")
 }
 
 // func shouldNotLaunchServer() bool {

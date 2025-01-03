@@ -11,7 +11,7 @@ type User struct {
 	Email     string         `json:"email" gorm:"unique"`
 	FirstName string         `json:"first_name"`
 	LastName  string         `json:"last_name"`
-	IsOnline  bool           `json:"is_online"`
+	IsOnline  bool           `json:"is_online" gorm:"default:true"`
 	CreatedAt time.Time      `json:"created_at,omitempty" gorm:"autoCreateTime"`
 	UpdatedAt time.Time      `json:"updated_at,omitempty" gorm:"autoUpdateTime"`
 	DeletedAt gorm.DeletedAt `gorm:"index:,unique,composite:emaildeletedat" json:"-"`
