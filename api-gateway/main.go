@@ -50,9 +50,9 @@ func main() {
 	router := gin.Default()
 
 	// Routing untuk Auth
-	router.POST("/auth/register", registerHandler)
 	router.POST("/auth/login", loginHandler)
 	router.POST("/auth/verify-otp", verifyOTPHandler)
+	router.POST("/auth/verify-token", verifyTokenHandler)
 
 	// Middleware untuk autentikasi
 	router.Use(middleware.Authentication())
@@ -70,23 +70,6 @@ func main() {
 	router.Run(":50051")
 }
 
-// Handler untuk Register
-func registerHandler(c *gin.Context) {
-	var req authpb.RegisterRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
-		return
-	}
-
-	res, err := authClient.Register(context.Background(), &req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to register"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"status": res.Status, "message": res.Message})
-}
-
 // Handler untuk Login
 func loginHandler(c *gin.Context) {
 	var req authpb.LoginRequest
@@ -101,7 +84,17 @@ func loginHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": res.Status, "message": res.Message})
+	c.JSON(http.StatusOK, gin.H{
+		"message": res.Message,
+		"user": gin.H{
+			"id":          res.User.Id,
+			"email":       res.User.Email,
+			"is_verified": res.User.IsVerified,
+			"created_at":  res.User.CreatedAt.AsTime(),
+			"updated_at":  res.User.UpdatedAt.AsTime(),
+		},
+		"token": res.Token,
+	})
 }
 
 // Handler untuk Verify OTP
@@ -119,10 +112,33 @@ func verifyOTPHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"status":     res.Status,
-		"message":    res.Message,
+		"message": res.Message,
+		"user": gin.H{
+			"id":          res.User.Id,
+			"email":       res.User.Email,
+			"is_verified": res.User.IsVerified,
+			"created_at":  res.User.CreatedAt.AsTime(),
+			"updated_at":  res.User.UpdatedAt.AsTime(),
+		},
+		"token": res.Token,
+	})
+}
+
+func verifyTokenHandler(c *gin.Context) {
+	var req authpb.TokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	res, err := authClient.VerifyToken(context.Background(), &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
 		"user_email": res.UserEmail,
-		"token":      res.Token,
 	})
 }
 
