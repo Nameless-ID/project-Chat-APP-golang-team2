@@ -1,0 +1,13 @@
+# build stage
+FROM golang:alpine3.19 as build
+WORKDIR /app
+COPY . .
+RUN go build -o user-service main.go
+ 
+# run stage
+FROM alpine:3.19
+WORKDIR /app
+COPY --from=build /app/user-service .
+ 
+EXPOSE 8080
+CMD ["/app/user-service"]
