@@ -143,6 +143,13 @@ func (s *AuthService) VerifyOTP(ctx context.Context, req *pb.OTPRequest) (*pb.Au
 		return nil, status.Errorf(codes.Internal, "Error creating JWT token")
 	}
 
+	user.IsVerified = true
+	err = s.Repo.Update(user)
+	if err != nil {
+		s.Log.Error("Failed to update user", zap.Error(err))
+		return nil, status.Errorf(codes.Internal, "Failed to update user")
+	}
+
 	// Check if the key exists and delete it if it does
 	err = s.Cacher.Delete(user.Email + "_token")
 	if err != nil && err != redis.Nil {
