@@ -8,13 +8,21 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/websocket"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
+
+var redisClient = redis.NewClient(&redis.Options{
+	Addr:     "localhost:6379", // Sesuaikan dengan konfigurasi Redis Anda
+	Password: "",               // Jika tidak ada password, kosongkan
+	DB:       0,                // Gunakan database default
+})
 
 var (
 	upgrader = websocket.Upgrader{
@@ -22,12 +30,13 @@ var (
 			return true
 		},
 	}
+	db           *gorm.DB
 	ClientsMutex sync.Mutex
 	grpcClient   pb.ChatServiceClient
 )
 
 func initGrpcClient() error {
-	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure()) // Ganti alamat sesuai server gRPC Anda
+	conn, err := grpc.Dial("localhost:50054", grpc.WithInsecure()) // Ganti alamat sesuai server gRPC Anda
 	if err != nil {
 		return fmt.Errorf("failed to connect to gRPC server: %v", err)
 	}
@@ -35,95 +44,6 @@ func initGrpcClient() error {
 	grpcClient = pb.NewChatServiceClient(conn)
 	return nil
 }
-
-// func wsHandler(w http.ResponseWriter, r *http.Request) {
-// 	conn, err := upgrader.Upgrade(w, r, nil)
-// 	if err != nil {
-// 		log.Println("Failed to upgrade connection:", err)
-// 		return
-// 	}
-// 	defer conn.Close()
-//
-// 	// Ambil token dari header
-// 	authHeader := r.Header.Get("Authorization")
-// 	if authHeader == "" {
-// 		log.Println("Missing Authorization header")
-// 		conn.WriteMessage(websocket.TextMessage, []byte("Unauthorized"))
-// 		return
-// 	}
-//
-// 	tokenParts := strings.Split(authHeader, " ")
-// 	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-// 		log.Println("Invalid Authorization header format")
-// 		conn.WriteMessage(websocket.TextMessage, []byte("Invalid token format"))
-// 		return
-// 	}
-//
-// 	token := tokenParts[1]
-//
-// 	senderID, err := helper.GetIdFromJWT1(token)
-// 	if err != nil {
-// 		fmt.Printf("failed to extract sender ID from token: %v", err)
-// 		return
-// 	}
-//
-// 	userID, _ := strconv.Atoi(senderID.(string))
-//
-// 	ctx, cancel := context.WithCancel(context.Background())
-// 	defer cancel()
-//
-// 	var wg sync.WaitGroup
-//
-// 	// Goroutine untuk streaming pesan dari gRPC
-// 	wg.Add(1)
-// 	go func() {
-// 		defer wg.Done()
-// 		md := metadata.Pairs("authorization", fmt.Sprintf("Bearer %s", token))
-// 		ctx = metadata.NewOutgoingContext(ctx, md)
-//
-// 		stream, err := grpcClient.StreamMessages(ctx, &pb.StreamMessagesRequest{
-// 			Token: token,
-// 		})
-//
-// 		if err != nil {
-// 			log.Printf("Error starting gRPC stream for user_id %d: %v", userID, err)
-// 			return
-// 		}
-//
-// 		for {
-// 			resp, err := stream.Recv()
-// 			if err != nil {
-// 				log.Printf("Error receiving gRPC message for user_id %d: %v", userID, err)
-// 				cancel()
-// 				break
-// 			}
-//
-// 			if err := conn.WriteJSON(resp); err != nil {
-// 				log.Printf("Error writing to WebSocket: %v", err)
-// 				cancel()
-// 				break
-// 			}
-// 		}
-// 	}()
-//
-// 	for {
-//
-// 		var msg pb.SendMessageRequest
-// 		if err := conn.ReadJSON(&msg); err != nil {
-// 			log.Printf("Error reading WebSocket message: %v", err)
-// 			cancel()
-// 			break
-// 		}
-//
-// 		log.Printf("Message from WebSocket: %s", &msg)
-//
-// 		if err := helper.ForwardToGrpc(msg.Content, int(msg.ReceiverId), authHeader); err != nil {
-// 			log.Println("Error forwarding message to gRPC:", err)
-// 			conn.WriteMessage(websocket.TextMessage, []byte("Failed to forward message"))
-// 			continue
-// 		}
-// 	}
-// }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -133,41 +53,60 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// Ambil token dari header
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		log.Println("Missing Authorization header")
+	token := r.Header.Get("token")
+	if token == "" {
+		log.Println("Missing token header")
 		conn.WriteMessage(websocket.TextMessage, []byte("Unauthorized"))
 		return
 	}
 
-	tokenParts := strings.Split(authHeader, " ")
-	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-		log.Println("Invalid Authorization header format")
-		conn.WriteMessage(websocket.TextMessage, []byte("Invalid token format"))
-		return
-	}
-
-	token := tokenParts[1]
-
 	senderID, err := helper.GetIdFromJWT1(token)
 	if err != nil {
-		fmt.Printf("failed to extract sender ID from token: %v", err)
+		fmt.Printf("Failed to extract sender ID from token: %v", err)
+		conn.WriteMessage(websocket.TextMessage, []byte("Invalid token"))
 		return
 	}
 
 	userID, _ := strconv.Atoi(senderID.(string))
+
+	if err := updateUserIsOnlineStatus(userID, true); err != nil {
+		log.Printf("Failed to update user online status for user_id %d: %v", userID, err)
+		conn.WriteMessage(websocket.TextMessage, []byte("Failed to update online status"))
+		return
+	}
+
+	defer func() {
+		if err := updateUserIsOnlineStatus(userID, false); err != nil {
+			log.Printf("Failed to update user offline status for user_id %d: %v", userID, err)
+		}
+	}()
+
+	redisKey := fmt.Sprintf("user:%d:offline_messages", userID)
+
+	offlineMessages, err := redisClient.LRange(context.Background(), redisKey, 0, -1).Result()
+	if err != nil {
+		log.Printf("Error retrieving offline messages for user_id %d: %v", userID, err)
+	} else {
+		for _, msg := range offlineMessages {
+			if err := conn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
+				log.Printf("Error sending offline message to user_id %d: %v", userID, err)
+			}
+		}
+
+		if err := redisClient.Del(context.Background(), redisKey).Err(); err != nil {
+			log.Printf("Error deleting offline messages for user_id %d: %v", userID, err)
+		}
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var wg sync.WaitGroup
 
-	// Goroutine untuk streaming pesan dari gRPC
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		md := metadata.Pairs("authorization", fmt.Sprintf("Bearer %s", token))
+		md := metadata.Pairs("token", token)
 		ctx = metadata.NewOutgoingContext(ctx, md)
 
 		stream, err := grpcClient.StreamMessages(ctx, &pb.StreamMessagesRequest{
@@ -235,7 +174,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 		for _, receiverID := range msg.ReceiverId {
 			log.Printf("Forwarding message to receiver ID %d", receiverID)
-			if err := helper.ForwardToGrpc(msg.Content, []int{int(receiverID)}, authHeader); err != nil {
+			if err := helper.ForwardToGrpc(msg.Content, []int{int(receiverID)}, token); err != nil {
+				log.Printf("Message content length: %d", len(msg.Content))
+				log.Printf("Receiver IDs: %v", msg.ReceiverId)
 				log.Printf("Error forwarding message to receiver %d: %v", receiverID, err)
 				conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("Failed to forward message to receiver %d", receiverID)))
 				continue
@@ -244,7 +185,28 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func updateUserIsOnlineStatus(userID int, isOnline bool) error {
+	err := db.Table("users").Where("id = ?", userID).Update("is_online", isOnline).Error
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func initDB() error {
+	var err error
+	dsn := "host=localhost user=postgres password=admin dbname=db_jwt port=5432 sslmode=disable"
+	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return fmt.Errorf("failed to connect to the database: %v", err)
+	}
+	return nil
+}
+
 func main() {
+	if err := initDB(); err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
 
 	if err := initGrpcClient(); err != nil {
 		log.Fatalf("Could not initialize gRPC client: %v", err)

@@ -10,7 +10,7 @@ import (
 )
 
 func ForwardToGrpc(message string, receiverIDs []int, token string) error {
-	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
+	conn, err := grpc.Dial("localhost:50054", grpc.WithInsecure())
 	if err != nil {
 		return err
 	}
@@ -18,7 +18,7 @@ func ForwardToGrpc(message string, receiverIDs []int, token string) error {
 
 	client := pb.NewChatServiceClient(conn)
 
-	md := metadata.Pairs("Authorization", token)
+	md := metadata.Pairs("token", token)
 	ctx := metadata.NewOutgoingContext(context.Background(), md)
 
 	request := &pb.SendMessageRequest{
