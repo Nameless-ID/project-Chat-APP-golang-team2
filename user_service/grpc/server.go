@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"user-service/config"
+	"user-service/helper"
 	"user-service/models"
 	"user-service/proto"
 	"user-service/service"
@@ -55,7 +56,11 @@ func (s *server) UpdateUser(ctx context.Context, req *proto.UpdateUserRequest) (
 		return nil, status.Errorf(codes.InvalidArgument, "First name or last name min 2 characters")
 	}
 
-	existingUser, err := s.userService.GetUserInfo(strconv.Itoa(int(req.Id)))
+	id, err := helper.ParsingJWT(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid token")
+	}
+	existingUser, err := s.userService.GetUserInfo(strconv.Itoa(int(*id)))
 	if err != nil {
 		if err.Error() == "user not found" {
 			return nil, status.Errorf(codes.NotFound, "User with ID %d not found", req.Id)
@@ -64,6 +69,10 @@ func (s *server) UpdateUser(ctx context.Context, req *proto.UpdateUserRequest) (
 		return nil, status.Errorf(codes.Internal, "Failed to fetch user info")
 	}
 
+	if req.Id != int32(existingUser.ID) {
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid Id")
+	}
+	
 	user := &models.User{
 		ID:        existingUser.ID,
 		FirstName: req.FirstName,

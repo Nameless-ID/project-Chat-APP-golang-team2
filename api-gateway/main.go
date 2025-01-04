@@ -54,6 +54,11 @@ func main() {
 	// defer conn1.Close()
 	grpcClient = chatpb.NewChatServiceClient(conn1)
 
+	authMiddleware, err := middleware.NewAuthMiddleware(":50052") // Sesuaikan alamat Auth Service
+	if err != nil {
+		log.Fatalf("Failed to initialize auth middleware: %v", err)
+	}
+
 	router := gin.Default()
 
 	// Routing untuk Auth
@@ -62,7 +67,7 @@ func main() {
 	router.POST("/auth/verify-token", verifyTokenHandler)
 
 	// Middleware untuk autentikasi
-	router.Use(middleware.Authentication())
+	router.Use(authMiddleware.Authentication())
 
 	// Routing untuk User Service
 	router.GET("/ws", websocket.WsHandler(grpcClient))
@@ -163,22 +168,30 @@ func getAllUsersHandler(c *gin.Context) {
 
 // Handler untuk UpdateUser
 func updateUserHandler(c *gin.Context) {
+	token := c.GetHeader("token")
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	md := metadata.Pairs("token", token)
+	ctx := metadata.NewOutgoingContext(context.Background(), md)
+
 	idParam := c.Param("id")
-	id, err := strconv.Atoi(idParam)
+	idPrm, err := strconv.Atoi(idParam)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
 		return
 	}
-
 	var req userpb.UpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
-	req.Id = int32(id)
+	req.Id = int32(idPrm)
 
-	res, err := userClient.UpdateUser(context.Background(), &req)
+	res, err := userClient.UpdateUser(ctx, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
 		return
