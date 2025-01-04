@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/grpc/metadata"
@@ -66,17 +65,12 @@ func ParsingJWT(ctx context.Context) (*int, error) {
 		return nil, fmt.Errorf("missing metadata in context")
 	}
 
-	authHeaders := md["authorization"]
+	authHeaders := md["token"]
 	if len(authHeaders) == 0 {
 		return nil, fmt.Errorf("authorization token not found")
 	}
 
 	tokenString := authHeaders[0]
-	if !strings.HasPrefix(tokenString, "Bearer ") {
-		return nil, fmt.Errorf("invalid token format")
-	}
-
-	tokenString = strings.TrimPrefix(tokenString, "Bearer ")
 
 	senderID, err := GetIdFromJWT1(tokenString)
 	if err != nil {
