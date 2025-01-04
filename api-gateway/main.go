@@ -22,7 +22,7 @@ import (
 var (
 	authClient authpb.AuthServiceClient
 	userClient userpb.UserServiceClient
-	chatClient chatpb.ChatServiceClient
+	grpcClient chatpb.ChatServiceClient
 )
 
 func main() {
@@ -47,12 +47,12 @@ func main() {
 	userClient = userpb.NewUserServiceClient(userConn)
 
 	// Inisialisasi koneksi gRPC ke Chat Service
-	chatConn, err := grpc.Dial("localhost:50054", grpc.WithInsecure())
+	conn1, err := grpc.Dial("localhost:50054", grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("Failed to connect to Chat Service: %v", err)
 	}
-	defer chatConn.Close()
-	chatClient = chatpb.NewChatServiceClient(chatConn)
+	// defer conn1.Close()
+	grpcClient = chatpb.NewChatServiceClient(conn1)
 
 	router := gin.Default()
 
@@ -65,7 +65,7 @@ func main() {
 	router.Use(middleware.Authentication())
 
 	// Routing untuk User Service
-	router.GET("/ws", websocket.WsHandler)
+	router.GET("/ws", websocket.WsHandler(grpcClient))
 	router.GET("/users", getAllUsersHandler)
 	router.PUT("/users/:id", updateUserHandler)
 
@@ -254,7 +254,7 @@ func listMessageHandler(c *gin.Context) {
 	md := metadata.Pairs("token", token)
 	ctx := metadata.NewOutgoingContext(context.Background(), md)
 
-	res, err := chatClient.ListMessage(ctx, &emptypb.Empty{})
+	res, err := grpcClient.ListMessage(ctx, &emptypb.Empty{})
 	if err != nil {
 		log.Print(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list messages"})
@@ -285,7 +285,7 @@ func listMessagesBySenderHandler(c *gin.Context) {
 	senderIDInt32 := int32(senderIDInt)
 
 	// Panggil service dengan senderID bertipe int32
-	res, err := chatClient.ListMessageBySender(context.Background(), &chatpb.ListMessageBySenderRequest{
+	res, err := grpcClient.ListMessageBySender(context.Background(), &chatpb.ListMessageBySenderRequest{
 		SenderId: senderIDInt32,
 	})
 	if err != nil {
