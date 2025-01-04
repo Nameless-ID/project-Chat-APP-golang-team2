@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -180,25 +181,75 @@ func updateUserHandler(c *gin.Context) {
 }
 
 func sendMessageHandler(c *gin.Context) {
-	var req chatpb.SendMessageRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	token := c.GetHeader("token")
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	var rawMsg map[string]interface{}
+
+	if err := c.ShouldBindJSON(&rawMsg); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
-	res, err := chatClient.SendMessage(context.Background(), &req)
-	if err != nil {
-		log.Print(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send message"})
+	var req chatpb.SendMessageRequest
+	if content, ok := rawMsg["content"].(string); ok {
+		req.Content = content
+	}
+
+	receiverIDRaw := rawMsg["receiver_id"]
+
+	switch v := receiverIDRaw.(type) {
+	case float64:
+		req.ReceiverId = []int32{int32(v)}
+	case []interface{}:
+		for _, id := range v {
+			if idFloat, ok := id.(float64); ok {
+				req.ReceiverId = append(req.ReceiverId, int32(idFloat))
+			}
+		}
+	default:
+		log.Println("Invalid receiver_id format")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid receiver_id format"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": res.Status})
+	if len(req.ReceiverId) == 0 {
+		log.Println("No receiver IDs provided")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No receiver IDs provided"})
+		return
+	}
+
+	for _, receiverID := range req.ReceiverId {
+		log.Printf("Forwarding message to receiver ID %d", receiverID)
+		if err := ForwardToGrpc(req.Content, []int{int(receiverID)}, token); err != nil {
+			log.Printf("Message content length: %d", len(req.Content))
+			log.Printf("Receiver IDs: %v", req.ReceiverId)
+			log.Printf("Error forwarding message to receiver %d: %v", receiverID, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to forward message to receiver"})
+			// conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("Failed to forward message to receiver %d", receiverID)))
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "successfully send message"})
 }
 
 func listMessageHandler(c *gin.Context) {
-	res, err := chatClient.ListMessage(context.Background(), &emptypb.Empty{})
+	token := c.GetHeader("token")
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	md := metadata.Pairs("token", token)
+	ctx := metadata.NewOutgoingContext(context.Background(), md)
+
+	res, err := chatClient.ListMessage(ctx, &emptypb.Empty{})
 	if err != nil {
+		log.Print(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list messages"})
 		return
 	}
@@ -247,4 +298,29 @@ func listMessagesBySenderHandler(c *gin.Context) {
 		"sender_name": res.SenderName,
 		"messages":    messages,
 	})
+}
+
+func ForwardToGrpc(message string, receiverIDs []int, token string) error {
+	conn, err := grpc.Dial("localhost:50054", grpc.WithInsecure())
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	client := chatpb.NewChatServiceClient(conn)
+
+	md := metadata.Pairs("token", token)
+	ctx := metadata.NewOutgoingContext(context.Background(), md)
+
+	request := &chatpb.SendMessageRequest{
+		ReceiverId: make([]int32, len(receiverIDs)),
+		Content:    message,
+	}
+
+	for i, receiverID := range receiverIDs {
+		request.ReceiverId[i] = int32(receiverID)
+	}
+
+	_, err = client.SendMessage(ctx, request)
+	return err
 }
