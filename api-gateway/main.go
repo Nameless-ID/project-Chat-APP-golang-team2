@@ -8,8 +8,10 @@ import (
 
 	authpb "api-gateway/auth-service"
 	chatpb "api-gateway/chat-service/script"
+	"api-gateway/helper"
 	"api-gateway/middleware"
 	userpb "api-gateway/user-service/proto"
+	"api-gateway/websocket"
 
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
@@ -24,6 +26,10 @@ var (
 )
 
 func main() {
+	if err := helper.InitDB(); err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+
 	// Inisialisasi koneksi gRPC ke Auth Service
 	conn, err := grpc.Dial("localhost:50052", grpc.WithInsecure())
 	if err != nil {
@@ -59,6 +65,7 @@ func main() {
 	router.Use(middleware.Authentication())
 
 	// Routing untuk User Service
+	router.GET("/ws", websocket.WsHandler)
 	router.GET("/users", getAllUsersHandler)
 	router.PUT("/users/:id", updateUserHandler)
 
@@ -224,7 +231,7 @@ func sendMessageHandler(c *gin.Context) {
 
 	for _, receiverID := range req.ReceiverId {
 		log.Printf("Forwarding message to receiver ID %d", receiverID)
-		if err := ForwardToGrpc(req.Content, []int{int(receiverID)}, token); err != nil {
+		if err := helper.ForwardToGrpc(req.Content, []int{int(receiverID)}, token); err != nil {
 			log.Printf("Message content length: %d", len(req.Content))
 			log.Printf("Receiver IDs: %v", req.ReceiverId)
 			log.Printf("Error forwarding message to receiver %d: %v", receiverID, err)
@@ -298,29 +305,4 @@ func listMessagesBySenderHandler(c *gin.Context) {
 		"sender_name": res.SenderName,
 		"messages":    messages,
 	})
-}
-
-func ForwardToGrpc(message string, receiverIDs []int, token string) error {
-	conn, err := grpc.Dial("localhost:50054", grpc.WithInsecure())
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	client := chatpb.NewChatServiceClient(conn)
-
-	md := metadata.Pairs("token", token)
-	ctx := metadata.NewOutgoingContext(context.Background(), md)
-
-	request := &chatpb.SendMessageRequest{
-		ReceiverId: make([]int32, len(receiverIDs)),
-		Content:    message,
-	}
-
-	for i, receiverID := range receiverIDs {
-		request.ReceiverId[i] = int32(receiverID)
-	}
-
-	_, err = client.SendMessage(ctx, request)
-	return err
 }
