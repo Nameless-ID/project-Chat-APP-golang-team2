@@ -286,7 +286,16 @@ func listMessageHandler(c *gin.Context) {
 }
 
 func listMessagesBySenderHandler(c *gin.Context) {
-	senderID := c.Query("sender_id")
+	token := c.GetHeader("token")
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	md := metadata.Pairs("token", token)
+	ctx := metadata.NewOutgoingContext(context.Background(), md)
+
+	senderID := c.Param("sender_id")
 
 	senderIDInt, err := strconv.Atoi(senderID)
 	if err != nil {
@@ -298,7 +307,7 @@ func listMessagesBySenderHandler(c *gin.Context) {
 	senderIDInt32 := int32(senderIDInt)
 
 	// Panggil service dengan senderID bertipe int32
-	res, err := grpcClient.ListMessageBySender(context.Background(), &chatpb.ListMessageBySenderRequest{
+	res, err := grpcClient.ListMessageBySender(ctx, &chatpb.ListMessageBySenderRequest{
 		SenderId: senderIDInt32,
 	})
 	if err != nil {
