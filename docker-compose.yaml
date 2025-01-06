@@ -1,0 +1,42 @@
+version: "3.8"
+services:
+  api-gateway:
+    build:
+      context: ./api-gateway
+    ports:
+      - "50051:50051"
+    depends_on:
+      - auth-service
+      - user-service
+      - chat-service
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:50052
+      USER_SERVICE_URL: http://user-service:50053
+      CHAT_SERVICE_URL: http://chat-service:50054
+
+  auth-service:
+    build:
+      context: ./auth-service
+    ports:
+      - "50052:50052"
+
+  user-service:
+    build:
+      context: ./user-service
+    ports:
+      - "50053:50053"
+
+  chat-service:
+    build:
+      context: ./chat-service
+    ports:
+      - "50054:50054"
+
+  db:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: team-2_chat-app
+    ports:
+      - "5432:5432"
